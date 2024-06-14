@@ -1,0 +1,105 @@
+name: nextcloud-base-fpm
+
+services:
+  lool:
+    image: libreoffice/online:master
+    container_name: lool
+    environment:
+      TZ: ${TZ}
+      domain: ${HOST_IP}
+      username: ${LO_ONLINE_USERNAME}
+      password: ${LO_ONLINE_PASSWORD}
+      extra_params: ${LO_ONLINE_EXTRA_PARAMS}
+      DONT_GEN_SSL_CERT: 1
+    cap_add:
+      - MKNOD
+    ports:
+      - 9980:9980
+    volumes:
+      - loolwsd:/etc/loolwsd
+    networks: 
+      - nextcloud
+
+  mariadb:
+    image: mariadb
+    container_name: mariadb
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
+    ports:
+      - ${DB_HOST_PORT}:${DB_DOCKER_CONTAINER_PORT}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+    volumes:
+      - mysql:/var/lib/mysql
+    networks: 
+      - nextcloud
+
+  redis:
+    image: redis
+    container_name: redis
+    networks: 
+      - nextcloud
+
+  nextcloud:
+    image: nextcloud:fpm
+    container_name: nextcloud
+    environment:
+      TZ: ${TZ}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_HOST: ${MYSQL_HOST}
+      REDIS_HOST: ${REDIS_HOST}
+    links:
+      - mariadb
+    volumes:
+      - nextcloud:/var/www/html
+      - ./nextcloud/config:/var/www/html/config
+      - ./nextcloud/data:/var/www/html/data
+    depends_on:
+      - mariadb
+      - redis
+    networks: 
+      - nextcloud
+
+  nginx:
+    image: nginx
+    container_name: nginx
+    tty: true
+    ports:
+      - ${NEXTCLOUD_HOST_PORT}:${NEXTCLOUD_DOCKER_CONTAINER_PORT}
+    links:
+      - nextcloud
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    volumes_from:
+      - nextcloud
+    depends_on: 
+      - nextcloud
+    networks: 
+      - nextcloud
+    
+  cron:
+    image: nextcloud:fpm
+    container_name: cron
+    volumes:
+      - nextcloud:/var/www/html
+      - ./nextcloud/config:/var/www/html/config
+      - ./nextcloud/data:/var/www/html/data
+    entrypoint: /cron.sh
+    depends_on:
+      - mariadb
+      - redis
+    networks: 
+      - nextcloud
+
+volumes:
+  loolwsd: {}
+  mysql: {}
+  nextcloud: {}
+
+networks:
+  nextcloud:
+    external: true
